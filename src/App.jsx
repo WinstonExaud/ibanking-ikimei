@@ -5,43 +5,34 @@ import { ToastProvider } from './context/ToastContext';
 import LoginPage from './pages/LoginPage';
 import BankerDashboard from './pages/BankerDashboard';
 import ClientDashboard from './pages/ClientDashboard';
+import NotFoundPage from './pages/NotFoundPage';
 import logo from './assets/ikm-logobg.png';
 
 // ─── Page title map ───────────────────────────────────────────────────────────
 const PAGE_TITLES = {
-  '/login':                    'Sign In — iKIMEI Banking',
-  '/banker':                   'Dashboard — iKIMEI Banker',
-  '/banker/accounts':          'Accounts — iKIMEI Banker',
-  '/banker/clients':           'Clients — iKIMEI Banker',
-  '/banker/transactions':      'Transactions — iKIMEI Banker',
-  '/banker/settings':          'Settings — iKIMEI Banker',
-  '/account':                  'Overview — iKIMEI Account',
-  '/account/transactions':     'Transactions — iKIMEI Account',
-  '/account/activity':         'Activity — iKIMEI Account',
+  '/login':                'Sign In — iKIMEI Banking',
+  '/banker':               'Dashboard — iKIMEI Banker',
+  '/banker/accounts':      'Accounts — iKIMEI Banker',
+  '/banker/clients':       'Clients — iKIMEI Banker',
+  '/banker/transactions':  'Transactions — iKIMEI Banker',
+  '/banker/settings':      'Settings — iKIMEI Banker',
+  '/account':              'Overview — iKIMEI Account',
+  '/account/transactions': 'Transactions — iKIMEI Account',
+  '/account/activity':     'Activity — iKIMEI Account',
 };
 
 // ─── Title updater ────────────────────────────────────────────────────────────
 function TitleUpdater() {
   const location = useLocation();
-
   useEffect(() => {
-    // Exact match first, then prefix match (longest wins)
     const path = location.pathname;
-
     const exact = PAGE_TITLES[path];
-    if (exact) {
-      document.title = exact;
-      return;
-    }
-
-    // Prefix match — find the longest matching prefix
+    if (exact) { document.title = exact; return; }
     const match = Object.keys(PAGE_TITLES)
       .filter(key => path.startsWith(key))
       .sort((a, b) => b.length - a.length)[0];
-
     document.title = match ? PAGE_TITLES[match] : 'iKIMEI Banking';
   }, [location.pathname]);
-
   return null;
 }
 
@@ -98,20 +89,41 @@ export default function App() {
           <TitleUpdater />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+
             <Route path="/banker/*" element={
               <ProtectedRoute role="banker">
                 <BankerDashboard />
               </ProtectedRoute>
             } />
+
             <Route path="/account/*" element={
               <ProtectedRoute role="account">
                 <ClientDashboard />
               </ProtectedRoute>
             } />
-            <Route path="*" element={<RoleRedirect />} />
+
+            {/* Catch-all — authenticated users go home, others go to login */}
+            <Route path="*" element={<SmartNotFound />} />
           </Routes>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   );
+}
+
+// Shows 404 for known-bad paths; redirects "/" and similar to the right place
+function SmartNotFound() {
+  const { user, userDoc, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) return <SplashScreen />;
+
+  // Root path → redirect to correct dashboard
+  if (location.pathname === '/') {
+    if (!user || !userDoc) return <Navigate to="/login" replace />;
+    return <Navigate to={userDoc.role === 'banker' ? '/banker' : '/account'} replace />;
+  }
+
+  // Everything else → 404
+  return <NotFoundPage />;
 }
