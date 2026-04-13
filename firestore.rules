@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: check if user is authenticated
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Helper: check if the user is a banker
+    function isBanker() {
+      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'banker';
+    }
+
+    // Helper: check if reading own data
+    function isOwn(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // Clients can read their own doc; bankers can read all
+      allow read: if isOwn(userId) || isBanker();
+      // Only bankers can create/update users
+      allow write: if isBanker();
+    }
+
+    // Accounts collection — only banker access
+    match /accounts/{accountId} {
+      allow read: if isBanker();
+      allow write: if isBanker();
+    }
+
+    // Transactions collection
+    match /transactions/{txId} {
+      // Clients can read their own transactions; bankers can read all
+      allow read: if isBanker() || (isAuth() && resource.data.toUserId == request.auth.uid);
+      // Only bankers can create transactions
+      allow create: if isBanker();
+      allow update, delete: if isBanker();
+    }
+
+    // System collection — only banker access
+    match /system/{docId} {
+      allow read, write: if isBanker();
+    }
+  }
+}
