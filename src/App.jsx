@@ -4,7 +4,7 @@ import { ToastProvider } from './context/ToastContext';
 import LoginPage from './pages/LoginPage';
 import BankerDashboard from './pages/BankerDashboard';
 import ClientDashboard from './pages/ClientDashboard';
-import logo from './assets/ikm-logo.png';
+import logo from './assets/ikm-logobg.png';
 
 function ProtectedRoute({ children, role }) {
   const { user, userDoc, loading } = useAuth();
