@@ -198,7 +198,7 @@ export default function LoginPage() {
       }
       playSound('login');
       addToast({ type: 'success', title: 'Welcome back!', message: `Logged in as ${userDoc.name || email}` });
-      navigate(userDoc.role === 'banker' ? '/banker' : '/client');
+      navigate(userDoc.role === 'banker' ? '/banker' : '/account');
     } catch (err) {
       addToast({ type: 'error', title: 'Login failed', message: err.code === 'auth/invalid-credential' ? 'Invalid email or password' : err.message });
     } finally {
