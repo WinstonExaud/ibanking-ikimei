@@ -1,7 +1,7 @@
-import { ArrowUpRight, Plus } from 'lucide-react';
+import { ArrowUpRight, Plus, Edit2 } from 'lucide-react';
 import { formatCurrency, formatDate, formatTime } from '../../utils/helpers';
 
-export default function TransactionRow({ tx, accounts = [], users = [] }) {
+export default function TransactionRow({ tx, accounts = [], users = [], onEdit }) {
   const isDeposit = tx.type === 'deposit';
 
   // Use stored names first (always reliable), then fall back to live lookups
@@ -25,7 +25,7 @@ export default function TransactionRow({ tx, accounts = [], users = [] }) {
   const amount = parseFloat(tx.amount);
 
   return (
-    <div className="flex items-center gap-4 py-3 px-1 hover:bg-surface-bg rounded-xl transition-colors cursor-default">
+    <div className="flex items-center gap-4 py-3 px-1 hover:bg-surface-bg rounded-xl transition-colors group cursor-default">
       <div className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${
         isDeposit ? 'bg-green-100' : 'bg-blue-100'
       }`}>
@@ -48,6 +48,14 @@ export default function TransactionRow({ tx, accounts = [], users = [] }) {
         </p>
         <p className="text-xs text-gray-400 font-inter">{formatTime(tx.createdAt)}</p>
       </div>
+
+      <button
+        onClick={() => onEdit?.(tx)}
+        className="opacity-0 group-hover:opacity-100 p-2 hover:bg-primary-100 rounded-lg transition-all duration-200 flex-shrink-0"
+        title="Edit transaction"
+      >
+        <Edit2 size={16} className="text-primary-600" />
+      </button>
 
       <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" title="Completed" />
     </div>

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import TransactionRow from '../../components/ui/TransactionRow';
 import ReceiptModal from '../../components/ui/ReceiptModal';
+import EditTransactionModal from '../../components/ui/EditTransactionModal';
 import {
   onTransactionsSnapshot, onAccountsSnapshot, onUsersSnapshot
 } from '../../services/bankingService';
@@ -79,6 +80,7 @@ export default function TransactionsPage() {
   const [users,        setUsers]        = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [receiptTx,    setReceiptTx]    = useState(null);
+  const [editTx,       setEditTx]       = useState(null);
   const [showFilters,  setShowFilters]  = useState(false);
 
   // ── Filter state ──────────────────────────────────────────────────────────
@@ -474,6 +476,7 @@ export default function TransactionsPage() {
               accounts={accounts}
               users={users}
               onRowClick={setReceiptTx}
+              onEdit={setEditTx}
             />
             <p className="text-center text-xs text-gray-300 font-inter pt-4 border-t border-surface-border/60 mt-2">
               Showing {filtered.length} transaction{filtered.length !== 1 ? 's' : ''}
@@ -489,12 +492,22 @@ export default function TransactionsPage() {
         accounts={accounts}
         users={users}
       />
+      <EditTransactionModal
+        open={!!editTx}
+        onClose={() => setEditTx(null)}
+        tx={editTx}
+        accounts={accounts}
+        users={users}
+        onSuccess={() => {
+          setEditTx(null);
+        }}
+      />
     </div>
   );
 }
 
 // ── Grouped by date ───────────────────────────────────────────────────────────
-function GroupedList({ transactions, accounts, users, onRowClick }) {
+function GroupedList({ transactions, accounts, users, onRowClick, onEdit }) {
   const groups = useMemo(() => {
     const map = new Map();
     transactions.forEach(tx => {
@@ -521,7 +534,7 @@ function GroupedList({ transactions, accounts, users, onRowClick }) {
           </div>
           {txs.map(tx => (
             <div key={tx.id} onClick={() => onRowClick(tx)} className="cursor-pointer border-b border-surface-border/40 last:border-0">
-              <TransactionRow tx={tx} accounts={accounts} users={users} />
+              <TransactionRow tx={tx} accounts={accounts} users={users} onEdit={onEdit} />
             </div>
           ))}
         </div>

@@ -3,7 +3,7 @@ import Modal from './Modal';
 import { quickTransfer } from '../../services/bankingService';
 import { useToast } from '../../context/ToastContext';
 import { SendHorizonal, CheckCircle, UserPlus, User, Printer } from 'lucide-react';
-import { formatCurrency, formatDate, formatTime } from '../../utils/helpers';
+import { formatCurrency, formatDate, formatTime, formatAmountInput, parseAmountInput } from '../../utils/helpers';
 
 export default function TransferModal({ open, onClose, accounts, clients, onSuccess }) {
   const [step, setStep] = useState(1); // 1=form, 2=review, 3=receipt
@@ -49,7 +49,7 @@ export default function TransferModal({ open, onClose, accounts, clients, onSucc
     e.preventDefault();
     if (!accountId) { addToast({ type: 'error', title: 'Select an account' }); return; }
     if (!clientName.trim()) { addToast({ type: 'error', title: 'Enter recipient name' }); return; }
-    const num = parseFloat(amount);
+    const num = parseAmountInput(amount);
     if (!num || num <= 0) { addToast({ type: 'error', title: 'Enter a valid amount' }); return; }
     setStep(2);
   };
@@ -57,7 +57,7 @@ export default function TransferModal({ open, onClose, accounts, clients, onSucc
   const handleConfirm = async () => {
     setLoading(true);
     try {
-      const num = parseFloat(amount);
+      const num = parseAmountInput(amount);
       const result = await quickTransfer(accountId, clientName.trim(), num, note);
       const now = new Date();
       setReceipt({
@@ -157,13 +157,11 @@ export default function TransferModal({ open, onClose, accounts, clients, onSucc
           <div>
             <label className="label">Amount (TZS)</label>
             <input
-              type="number"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
+              type="text"
+              value={formatAmountInput(amount)}
+              onChange={e => setAmount(e.target.value.replace(/[^0-9]/g, ''))}
               className="input-field"
               placeholder="0"
-              min="1"
-              step="1"
               required
             />
             {selectedAccount && (
@@ -196,7 +194,7 @@ export default function TransferModal({ open, onClose, accounts, clients, onSucc
           <div className="bg-surface-bg rounded-2xl p-5 space-y-4">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest font-poppins">Confirm Transfer</p>
             <div className="text-center py-3">
-              <p className="text-4xl font-bold text-gray-900 font-poppins">{formatCurrency(parseFloat(amount))}</p>
+              <p className="text-4xl font-bold text-gray-900 font-poppins">{formatCurrency(parseAmountInput(amount))}</p>
               <div className="flex items-center justify-center gap-2 mt-2 text-sm text-gray-500 font-inter">
                 <span className="font-semibold text-gray-700">{selectedAccount?.name}</span>
                 <span>→</span>

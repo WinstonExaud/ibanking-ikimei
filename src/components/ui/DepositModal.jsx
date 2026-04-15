@@ -3,7 +3,7 @@ import Modal from './Modal';
 import { depositToAccount } from '../../services/bankingService';
 import { useToast } from '../../context/ToastContext';
 import { PlusCircle, CheckCircle } from 'lucide-react';
-import { formatCurrency } from '../../utils/helpers';
+import { formatCurrency, formatAmountInput, parseAmountInput } from '../../utils/helpers';
 
 export default function DepositModal({ open, onClose, accounts, onSuccess }) {
   const [step, setStep] = useState(1); // 1=form, 2=receipt
@@ -22,7 +22,7 @@ export default function DepositModal({ open, onClose, accounts, onSuccess }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const num = parseFloat(amount);
+    const num = parseAmountInput(amount);
     if (!accountId) { addToast({ type: 'error', title: 'Select an account' }); return; }
     if (!num || num <= 0) { addToast({ type: 'error', title: 'Enter a valid amount' }); return; }
     setLoading(true);
@@ -65,13 +65,11 @@ export default function DepositModal({ open, onClose, accounts, onSuccess }) {
           <div>
             <label className="label">Amount (TZS)</label>
             <input
-              type="number"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
+              type="text"
+              value={formatAmountInput(amount)}
+              onChange={e => setAmount(e.target.value.replace(/[^0-9]/g, ''))}
               className="input-field"
               placeholder="0"
-              min="1"
-              step="1"
               required
             />
           </div>
@@ -87,10 +85,10 @@ export default function DepositModal({ open, onClose, accounts, onSuccess }) {
             />
           </div>
 
-          {accountId && amount && parseFloat(amount) > 0 && (
+          {accountId && amount && parseAmountInput(amount) > 0 && (
             <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
               <p className="text-xs font-semibold text-green-700 font-poppins mb-1">Deposit Preview</p>
-              <p className="text-lg font-bold text-green-800 font-poppins">+ {formatCurrency(parseFloat(amount))}</p>
+              <p className="text-lg font-bold text-green-800 font-poppins">+ {formatCurrency(parseAmountInput(amount))}</p>
               <p className="text-xs text-green-600 font-inter">→ {selectedAccount?.name}</p>
             </div>
           )}

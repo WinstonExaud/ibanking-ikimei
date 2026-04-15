@@ -7,6 +7,7 @@ import MoneyFlowChart from '../../components/charts/MoneyFlowChart';
 import TransactionRow from '../../components/ui/TransactionRow';
 import DepositModal from '../../components/ui/DepositModal';
 import TransferModal from '../../components/ui/TransferModal';
+import EditTransactionModal from '../../components/ui/EditTransactionModal';
 import ReceiptModal from '../../components/ui/ReceiptModal';
 import {
   onAccountsSnapshot, onTransactionsSnapshot,
@@ -26,6 +27,7 @@ export default function DashboardHome() {
   const [depositOpen, setDepositOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [receiptTx, setReceiptTx] = useState(null);
+  const [editTx, setEditTx] = useState(null);
 
   const clients = users.filter(u => u.role === 'client');
 
@@ -99,7 +101,7 @@ export default function DashboardHome() {
               <div className="divide-y divide-surface-border/60">
                 {recentTx.map(tx => (
                   <div key={tx.id} onClick={() => setReceiptTx(tx)} className="cursor-pointer">
-                    <TransactionRow tx={tx} accounts={accounts} users={users} />
+                    <TransactionRow tx={tx} accounts={accounts} users={users} onEdit={setEditTx} />
                   </div>
                 ))}
               </div>
@@ -175,6 +177,16 @@ export default function DashboardHome() {
       {/* Modals */}
       <DepositModal open={depositOpen} onClose={() => setDepositOpen(false)} accounts={accounts} />
       <TransferModal open={transferOpen} onClose={() => setTransferOpen(false)} accounts={accounts} clients={clients} />
+      <EditTransactionModal
+        open={!!editTx}
+        onClose={() => setEditTx(null)}
+        tx={editTx}
+        accounts={accounts}
+        users={users}
+        onSuccess={() => {
+          setEditTx(null);
+        }}
+      />
       <ReceiptModal open={!!receiptTx} onClose={() => setReceiptTx(null)} tx={receiptTx} accounts={accounts} users={users} />
     </div>
   );

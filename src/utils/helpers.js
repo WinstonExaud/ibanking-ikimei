@@ -4,6 +4,19 @@ export const formatCurrency = (amount, currency = 'TZS') => {
   return `${currency} ${num.toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
 };
 
+// Format amount input with commas for display (e.g., "6,000,000")
+export const formatAmountInput = (value) => {
+  if (!value) return '';
+  const numStr = value.toString().replace(/[^0-9]/g, '');
+  return numStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
+// Parse amount input removing commas and returning numeric value
+export const parseAmountInput = (value) => {
+  const num = parseFloat(value.toString().replace(/[^0-9]/g, ''));
+  return isNaN(num) ? 0 : num;
+};
+
 export const formatDate = (timestamp) => {
   if (!timestamp) return '—';
   try {

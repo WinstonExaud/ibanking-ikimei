@@ -209,6 +209,107 @@ export const quickTransfer = async (fromAccountId, clientName, amount, note = ''
   return { clientId: client.id, clientName: client.name, isNew, txId };
 };
 
+// ─── EDIT TRANSACTION ────────────────────────────────────────────────────────
+// Edits transaction amount and/or source account while maintaining balance integrity
+// Reverse old transaction balances, apply new ones, update transaction record
+export const editTransaction = async (txId, updates) => {
+  const { newAmount, newAccountId, newNote } = updates;
+  const numAmount = newAmount ? parseFloat(newAmount) : null;
+
+  if (numAmount !== null && (isNaN(numAmount) || numAmount <= 0)) {
+    throw new Error('Invalid amount');
+  }
+
+  await runTransaction(db, async (tx) => {
+    // FIRST: Read all necessary data
+    const txRef = doc(db, 'transactions', txId);
+    const txSnap = await tx.get(txRef);
+
+    if (!txSnap.exists()) throw new Error('Transaction not found');
+
+    const oldTx = txSnap.data();
+    const oldAmount = safeBalance(oldTx.amount);
+    const finalAmount = numAmount !== null ? numAmount : oldAmount;
+    const finalAccountId = newAccountId || oldTx.fromAccountId;
+    const amountDiff = finalAmount - oldAmount;
+    const accountChanged = newAccountId && newAccountId !== oldTx.fromAccountId;
+
+    // Read all account and user data needed for the transaction
+    const finalAccRef = doc(db, 'accounts', finalAccountId);
+    const finalAccSnap = await tx.get(finalAccRef);
+    if (!finalAccSnap.exists()) throw new Error('Account not found');
+
+    let oldAccSnap = null;
+    if (accountChanged) {
+      const oldAccRef = doc(db, 'accounts', oldTx.fromAccountId);
+      oldAccSnap = await tx.get(oldAccRef);
+      if (!oldAccSnap.exists()) throw new Error('Original account not found');
+    }
+
+    let userSnap = null;
+    if (oldTx.type === 'transfer') {
+      const userRef = doc(db, 'users', oldTx.toUserId);
+      userSnap = await tx.get(userRef);
+      if (!userSnap.exists()) throw new Error('Client not found');
+    }
+
+    let newAccountData = null;
+    if (newAccountId) {
+      // We already read this above as finalAccSnap
+      newAccountData = finalAccSnap.data();
+    }
+
+    // NOW: Perform all writes after all reads are done
+
+    if (oldTx.type === 'deposit') {
+      // For deposits: adjust account balance by the difference
+      const currentBalance = safeBalance(finalAccSnap.data().balance);
+
+      if (accountChanged) {
+        const oldAccBalance = safeBalance(oldAccSnap.data().balance);
+        tx.update(oldAccSnap.ref, { balance: oldAccBalance - oldAmount });
+        tx.update(finalAccSnap.ref, { balance: currentBalance + finalAmount });
+      } else {
+        // Same account, just adjust by difference
+        tx.update(finalAccSnap.ref, { balance: currentBalance + amountDiff });
+      }
+    } else if (oldTx.type === 'transfer') {
+      // For transfers: adjust both account and client balances
+      const accBalance = safeBalance(finalAccSnap.data().balance);
+      const userBalance = safeBalance(userSnap.data().balance);
+
+      if (accountChanged) {
+        const oldAccBalance = safeBalance(oldAccSnap.data().balance);
+        // Reverse old: add back to old account
+        tx.update(oldAccSnap.ref, { balance: oldAccBalance + oldAmount });
+        // Apply new: deduct from new account
+        tx.update(finalAccSnap.ref, { balance: accBalance - finalAmount });
+      } else {
+        // Same account, adjust by difference
+        tx.update(finalAccSnap.ref, { balance: accBalance - amountDiff });
+      }
+
+      // Adjust client balance by difference
+      tx.update(userSnap.ref, { balance: userBalance + amountDiff });
+    }
+
+    // Update transaction record
+    const updateData = {
+      amount: finalAmount,
+      ...(newNote !== undefined && { note: newNote || '' }),
+      updatedAt: serverTimestamp(),
+    };
+
+    // Always update fromAccountId and fromAccountName if newAccountId is provided
+    if (newAccountId) {
+      updateData.fromAccountId = newAccountId;
+      updateData.fromAccountName = newAccountData.name || newAccountId; // Fallback to ID if name missing
+    }
+
+    tx.update(txRef, updateData);
+  });
+};
+
 // ─── SYSTEM ───────────────────────────────────────────────────────────────────
 export const onSystemSnapshot = (cb) => {
   return onSnapshot(doc(db, 'system', 'totals'), snap => {
