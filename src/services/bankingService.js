@@ -5,8 +5,8 @@ import {
 } from 'firebase/auth';
 import {
   doc, getDoc, setDoc, collection,
-  getDocs, query, where, orderBy, limit, onSnapshot,
-  serverTimestamp, increment, runTransaction
+  getDocs, query, where, orderBy, onSnapshot,
+  serverTimestamp, runTransaction
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
@@ -16,7 +16,6 @@ export const logoutUser = () => signOut(auth);
 export const onAuthChange = (cb) => onAuthStateChanged(auth, cb);
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-// Safely parse a Firestore balance field — handles string "NaN", null, undefined
 const safeBalance = (val) => {
   const n = parseFloat(val);
   return isNaN(n) ? 0 : n;
@@ -93,8 +92,9 @@ export const getUserTransactions = async (userId) => {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 };
 
+// NO limit — fetch ALL transactions from Firestore, paginate on the client
 export const onTransactionsSnapshot = (cb) => {
-  const q = query(collection(db, 'transactions'), orderBy('createdAt', 'desc'), limit(50));
+  const q = query(collection(db, 'transactions'), orderBy('createdAt', 'desc'));
   return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 };
 
@@ -110,25 +110,19 @@ export const depositToAccount = async (accountId, amount, note = '') => {
     const accSnap = await tx.get(accRef);
     if (!accSnap.exists()) throw new Error('Account not found');
 
-    // Use safeBalance to handle corrupted "NaN" string in Firestore
     const currentBalance = safeBalance(accSnap.data().balance);
-    const newBalance = currentBalance + numAmount;
-
-    // Read current system total
     const sysSnap = await tx.get(sysRef);
     const currentTotal = sysSnap.exists() ? safeBalance(sysSnap.data().totalBalance) : 0;
 
-    // Write explicit values — never use increment() on potentially corrupted fields
-    tx.update(accRef, { balance: newBalance });
+    tx.update(accRef, { balance: currentBalance + numAmount });
     tx.set(sysRef, { totalBalance: currentTotal + numAmount }, { merge: true });
 
-    // Record transaction
     tx.set(doc(collection(db, 'transactions')), {
       fromAccountId: accountId,
       fromAccountName: accSnap.data().name || '',
       toUserId: null,
       toClientName: null,
-      amount: numAmount,           // always a number
+      amount: numAmount,
       type: 'deposit',
       status: 'completed',
       note: note || '',
@@ -138,12 +132,6 @@ export const depositToAccount = async (accountId, amount, note = '') => {
 };
 
 // ─── TRANSFER ─────────────────────────────────────────────────────────────────
-// fromAccountId — business account to deduct from
-// toUserId      — client user UID to credit
-// toClientName  — display name for the transaction record
-// amount        — number
-// note          — optional string
-// Returns the new transaction ID
 export const transferToClient = async (fromAccountId, toUserId, toClientName, amount, note = '') => {
   const numAmount = parseFloat(amount);
   if (isNaN(numAmount) || numAmount <= 0) throw new Error('Invalid amount');
@@ -152,7 +140,7 @@ export const transferToClient = async (fromAccountId, toUserId, toClientName, am
 
   await runTransaction(db, async (tx) => {
     const accRef  = doc(db, 'accounts', fromAccountId);
-    const userRef = doc(db, 'users',    toUserId);
+    const userRef = doc(db, 'users', toUserId);
 
     const accSnap  = await tx.get(accRef);
     const userSnap = await tx.get(userRef);
@@ -163,23 +151,25 @@ export const transferToClient = async (fromAccountId, toUserId, toClientName, am
     const accBalance  = safeBalance(accSnap.data().balance);
     const userBalance = safeBalance(userSnap.data().balance);
 
-    // Allow overdraft/credit behavior: accounts may go negative when transferring.
+    if (accBalance < numAmount) {
+      throw new Error(`Insufficient balance. Available: TZS ${accBalance.toLocaleString()}`);
+    }
+
     tx.update(accRef,  { balance: accBalance  - numAmount });
     tx.update(userRef, { balance: userBalance + numAmount });
 
-    // Record transaction — note the strict field order: amount is a number, note is a string
     const txRef = doc(collection(db, 'transactions'));
     newTxId = txRef.id;
     tx.set(txRef, {
       fromAccountId,
-      fromAccountName: accSnap.data().name  || '',
+      fromAccountName: accSnap.data().name || '',
       toUserId,
-      toClientName:    toClientName || userSnap.data().name || '',
-      amount:          numAmount,   // ← number, always
-      type:            'transfer',
-      status:          'completed',
-      note:            note || '',  // ← string, always
-      createdAt:       serverTimestamp(),
+      toClientName: toClientName || userSnap.data().name || '',
+      amount: numAmount,
+      type: 'transfer',
+      status: 'completed',
+      note: note || '',
+      createdAt: serverTimestamp(),
     });
   });
 
@@ -187,7 +177,6 @@ export const transferToClient = async (fromAccountId, toUserId, toClientName, am
 };
 
 // ─── QUICK TRANSFER ───────────────────────────────────────────────────────────
-// Looks up client by name; auto-creates walk-in if not found
 export const quickTransfer = async (fromAccountId, clientName, amount, note = '') => {
   let client = await findClientByName(clientName);
   let isNew  = false;
@@ -209,9 +198,7 @@ export const quickTransfer = async (fromAccountId, clientName, amount, note = ''
   return { clientId: client.id, clientName: client.name, isNew, txId };
 };
 
-// ─── EDIT TRANSACTION ────────────────────────────────────────────────────────
-// Edits transaction amount and/or source account while maintaining balance integrity
-// Reverse old transaction balances, apply new ones, update transaction record
+// ─── EDIT TRANSACTION ─────────────────────────────────────────────────────────
 export const editTransaction = async (txId, updates) => {
   const { newAmount, newAccountId, newNote } = updates;
   const numAmount = newAmount ? parseFloat(newAmount) : null;
@@ -221,92 +208,62 @@ export const editTransaction = async (txId, updates) => {
   }
 
   await runTransaction(db, async (tx) => {
-    // FIRST: Read all necessary data
-    const txRef = doc(db, 'transactions', txId);
+    const txRef  = doc(db, 'transactions', txId);
     const txSnap = await tx.get(txRef);
-
     if (!txSnap.exists()) throw new Error('Transaction not found');
 
-    const oldTx = txSnap.data();
-    const oldAmount = safeBalance(oldTx.amount);
+    const oldTx       = txSnap.data();
+    const oldAmount   = safeBalance(oldTx.amount);
     const finalAmount = numAmount !== null ? numAmount : oldAmount;
-    const finalAccountId = newAccountId || oldTx.fromAccountId;
-    const amountDiff = finalAmount - oldAmount;
-    const accountChanged = newAccountId && newAccountId !== oldTx.fromAccountId;
+    const finalAccId  = newAccountId || oldTx.fromAccountId;
+    const amountDiff  = finalAmount - oldAmount;
+    const accChanged  = newAccountId && newAccountId !== oldTx.fromAccountId;
 
-    // Read all account and user data needed for the transaction
-    const finalAccRef = doc(db, 'accounts', finalAccountId);
+    const finalAccRef  = doc(db, 'accounts', finalAccId);
     const finalAccSnap = await tx.get(finalAccRef);
     if (!finalAccSnap.exists()) throw new Error('Account not found');
 
     let oldAccSnap = null;
-    if (accountChanged) {
-      const oldAccRef = doc(db, 'accounts', oldTx.fromAccountId);
-      oldAccSnap = await tx.get(oldAccRef);
+    if (accChanged) {
+      oldAccSnap = await tx.get(doc(db, 'accounts', oldTx.fromAccountId));
       if (!oldAccSnap.exists()) throw new Error('Original account not found');
     }
 
     let userSnap = null;
     if (oldTx.type === 'transfer') {
-      const userRef = doc(db, 'users', oldTx.toUserId);
-      userSnap = await tx.get(userRef);
+      userSnap = await tx.get(doc(db, 'users', oldTx.toUserId));
       if (!userSnap.exists()) throw new Error('Client not found');
     }
 
-    let newAccountData = null;
-    if (newAccountId) {
-      // We already read this above as finalAccSnap
-      newAccountData = finalAccSnap.data();
-    }
-
-    // NOW: Perform all writes after all reads are done
-
     if (oldTx.type === 'deposit') {
-      // For deposits: adjust account balance by the difference
-      const currentBalance = safeBalance(finalAccSnap.data().balance);
-
-      if (accountChanged) {
-        const oldAccBalance = safeBalance(oldAccSnap.data().balance);
-        tx.update(oldAccSnap.ref, { balance: oldAccBalance - oldAmount });
-        tx.update(finalAccSnap.ref, { balance: currentBalance + finalAmount });
+      const bal = safeBalance(finalAccSnap.data().balance);
+      if (accChanged) {
+        tx.update(oldAccSnap.ref, { balance: safeBalance(oldAccSnap.data().balance) - oldAmount });
+        tx.update(finalAccSnap.ref, { balance: bal + finalAmount });
       } else {
-        // Same account, just adjust by difference
-        tx.update(finalAccSnap.ref, { balance: currentBalance + amountDiff });
+        tx.update(finalAccSnap.ref, { balance: bal + amountDiff });
       }
     } else if (oldTx.type === 'transfer') {
-      // For transfers: adjust both account and client balances
-      const accBalance = safeBalance(finalAccSnap.data().balance);
-      const userBalance = safeBalance(userSnap.data().balance);
-
-      if (accountChanged) {
-        const oldAccBalance = safeBalance(oldAccSnap.data().balance);
-        // Reverse old: add back to old account
-        tx.update(oldAccSnap.ref, { balance: oldAccBalance + oldAmount });
-        // Apply new: deduct from new account
-        tx.update(finalAccSnap.ref, { balance: accBalance - finalAmount });
+      const accBal  = safeBalance(finalAccSnap.data().balance);
+      const userBal = safeBalance(userSnap.data().balance);
+      if (accChanged) {
+        tx.update(oldAccSnap.ref, { balance: safeBalance(oldAccSnap.data().balance) + oldAmount });
+        tx.update(finalAccSnap.ref, { balance: accBal - finalAmount });
       } else {
-        // Same account, adjust by difference
-        tx.update(finalAccSnap.ref, { balance: accBalance - amountDiff });
+        tx.update(finalAccSnap.ref, { balance: accBal - amountDiff });
       }
-
-      // Adjust client balance by difference
-      tx.update(userSnap.ref, { balance: userBalance + amountDiff });
+      tx.update(userSnap.ref, { balance: userBal + amountDiff });
     }
 
-    // Update transaction record
-    const updateData = {
+    tx.update(txRef, {
       amount: finalAmount,
       ...(newNote !== undefined && { note: newNote || '' }),
+      ...(newAccountId && {
+        fromAccountId: newAccountId,
+        fromAccountName: finalAccSnap.data().name || newAccountId,
+      }),
       updatedAt: serverTimestamp(),
-    };
-
-    // Always update fromAccountId and fromAccountName if newAccountId is provided
-    if (newAccountId) {
-      updateData.fromAccountId = newAccountId;
-      updateData.fromAccountName = newAccountData.name || newAccountId; // Fallback to ID if name missing
-    }
-
-    tx.update(txRef, updateData);
+    });
   });
 };
 
