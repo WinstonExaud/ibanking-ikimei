@@ -151,10 +151,7 @@ export const transferToClient = async (fromAccountId, toUserId, toClientName, am
     const accBalance  = safeBalance(accSnap.data().balance);
     const userBalance = safeBalance(userSnap.data().balance);
 
-    if (accBalance < numAmount) {
-      throw new Error(`Insufficient balance. Available: TZS ${accBalance.toLocaleString()}`);
-    }
-
+    // Allow overdraft/credit behavior: accounts can go negative when transferring
     tx.update(accRef,  { balance: accBalance  - numAmount });
     tx.update(userRef, { balance: userBalance + numAmount });
 
