@@ -70,6 +70,7 @@ export default function EditTransactionModal({ open, onClose, tx, accounts = [],
         message,
       });
       onSuccess?.();
+      setLoading(false);
       setStep(3);
       setTimeout(() => {
         onClose();

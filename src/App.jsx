@@ -16,6 +16,7 @@ const PAGE_TITLES = {
   '/banker/clients':       'Clients — iKIMEI Banker',
   '/banker/transactions':  'Transactions — iKIMEI Banker',
   '/banker/settings':      'Settings — iKIMEI Banker',
+  
   '/account':              'Overview — iKIMEI Account',
   '/account/transactions': 'Transactions — iKIMEI Account',
   '/account/activity':     'Activity — iKIMEI Account',
