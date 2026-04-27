@@ -9,6 +9,7 @@ import TransactionsPage from './banker/TransactionsPage';
 import AnalyticsPage from './banker/AnalyticsPage';
 import ClientsPage from './banker/ClientsPage';
 import SettingsPage from './banker/SettingsPage';
+import ProfilePage from './banker/ProfilePage';
 
 export default function BankerDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -29,6 +30,7 @@ export default function BankerDashboard() {
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="clients" element={<ClientsPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="profile" element={<ProfilePage />} />
           </Routes>
         </main>
       </div>
